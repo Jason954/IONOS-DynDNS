@@ -62,6 +62,13 @@ def parse_cmdline_args():
         metavar="",
         help="API key secret"
     )
+    argparser.add_argument(
+        "-S", "--subdomain",
+        default=False,
+        action="store_const",
+        const=True,
+        help="Check subdomain (Default: false)"
+    )
 
     args = argparser.parse_args()
 
@@ -89,7 +96,15 @@ def main():
 
     domain = get_domain_from_fqdn(fqdn)
     zone = get_zone(domain)
-    all_records = get_all_records_for_fqdn(zone["id"], fqdn)
+    all_records = get_all_records_for_fqdn(zone["id"], fqdn, args.subdomain)
+
+    # iterate each records
+    for records in all_records:
+        # logging.info(f"Record: {records['name']} {records['type']} {records['content']} {records['ttl']}")
+        print(f"Record: {records['name']} {records['type']} {records['content']} {records['ttl']}")
+    print(all_records)
+    exit(-1)
+
     records_to_create = []
     records_to_update = []
 
@@ -97,7 +112,8 @@ def main():
     if args.A:
         ipv4_address = get_ipv4_address()
         logging.info("Public IPv4: " + ipv4_address)
-        if filter_records_by_type(all_records, "A"):
+        records_filtered = filter_records_by_type(all_records, "A")
+        if records_filtered:
             if filter_records_by_type(all_records, "A")[0]["content"] == ipv4_address:
                 logging.info("A record is up-to-date")
             else:
@@ -160,10 +176,10 @@ def get_zone(domain):
     return list(filter(lambda zone: zone['name'] == domain, response))[0]
 
 
-def get_all_records_for_fqdn(zone_id, host):
+def get_all_records_for_fqdn(zone_id, host, subdomain = False):
     url = f"{api_url}/{zone_id}"
     records = json.loads(requests.request("GET", url, headers=api_headers).text)['records']
-    return list(filter(lambda record: record['name'] == host, records))
+    return list(filter(lambda record: record['name'] == host or (subdomain is True and record['name'] == '*.'+host), records))
 
 
 def filter_records_by_type(records, type):
