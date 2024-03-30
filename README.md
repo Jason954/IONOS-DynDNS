@@ -52,6 +52,7 @@ optional arguments:
   -H , --fqdn        Host's FQDN (Default: hostname -f)
   --api-prefix       API key publicprefix
   --api-secret       API key secret
+  -S, --subdomain    Create/Update subdomain A/AAAA record (Default: False)
 ```
 
 ## Ideas / To-do

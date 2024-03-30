@@ -2,7 +2,11 @@
 
 # Author: Lázaro Blanc
 # GitHub: https://github.com/lazaroblanc
+# Forked by: Jason Deroubaix
+# GitHub: https://github.com/Jason954/IONOS-DynDNS
+
 # Usage example: ./ionos_dyndns.py --A --AAAA --api-prefix <api_prefix> --api-secret <api_secret>
+
 
 import subprocess  # Getting IPv6 address from systools instead of via web API
 import re  # Just regex stuff
@@ -17,7 +21,7 @@ logging.basicConfig(stream=sys.stdout, format="%(asctime)s %(message)s", datefmt
 def parse_cmdline_args():
     argparser = ArgumentParser(
         description="Create and update DNS records for this host using IONOS' API to use as a sort of DynDNS (for example via a cronjob).",
-        epilog="Author: Lázaro Blanc\nGitHub: https://github.com/lazaroblanc",
+        epilog="Author: Lázaro Blanc\nGitHub: https://github.com/lazaroblanc, `\nForked: Jason Deroubaix",
         formatter_class=RawDescriptionHelpFormatter
     )
     argparser.add_argument(
@@ -43,21 +47,21 @@ def parse_cmdline_args():
     )
     argparser.add_argument(
         "-H", "--fqdn",
-        default=subprocess.getoutput(f"hostname -f"),
+        default=subprocess.getoutput("hostname -f"),
         action="store",
         metavar="",
         help="Host's FQDN (Default: hostname -f)"
     )
     argparser.add_argument(
         "--api-prefix",
-        required=True,
+        required=False,
         action="store",
         metavar="",
         help="API key publicprefix"
     )
     argparser.add_argument(
         "--api-secret",
-        required=True,
+        required=False,
         action="store",
         metavar="",
         help="API key secret"
@@ -68,6 +72,20 @@ def parse_cmdline_args():
         action="store_const",
         const=True,
         help="Check subdomain (Default: false)"
+    )
+    argparser.add_argument(
+        "--api-prefix-file",
+        required=False,
+        action="store",
+        metavar="",
+        help="Path to the file containing the API key publicprefix, WARNING OVERWRITES --api-prefix"
+    )
+    argparser.add_argument(
+        "--api-secret-file",
+        required=False,
+        action="store",
+        metavar="",
+        help="Path to the file containing the API key secret, WARNING OVERWRITES --api-secret"
     )
 
     args = argparser.parse_args()
@@ -85,6 +103,21 @@ fqdn = args.fqdn.lower()
 api_url = "https://api.hosting.ionos.com/dns/v1/zones"
 api_key_publicprefix = args.api_prefix
 api_key_secret = args.api_secret
+
+if args.api_prefix_file:
+    with open(args.api_prefix_file, "r") as file:
+        api_key_publicprefix = file.read().strip()
+
+if args.api_secret_file:
+    with open(args.api_secret_file, "r") as file:
+        api_key_secret = file.read().strip()
+
+# check if the API key and secret are set
+if not api_key_publicprefix or not api_key_secret:
+    logging.error("API key and secret are required")
+    exit(1)
+
+
 api_headers = {
     "accept": "application/json",
     "X-API-Key": f"{api_key_publicprefix}.{api_key_secret}"
@@ -98,13 +131,6 @@ def main():
     zone = get_zone(domain)
     all_records = get_all_records_for_fqdn(zone["id"], fqdn, args.subdomain)
 
-    # iterate each records
-    for records in all_records:
-        # logging.info(f"Record: {records['name']} {records['type']} {records['content']} {records['ttl']}")
-        print(f"Record: {records['name']} {records['type']} {records['content']} {records['ttl']}")
-    print(all_records)
-    exit(-1)
-
     records_to_create = []
     records_to_update = []
 
@@ -113,16 +139,22 @@ def main():
         ipv4_address = get_ipv4_address()
         logging.info("Public IPv4: " + ipv4_address)
         records_filtered = filter_records_by_type(all_records, "A")
-        if records_filtered:
-            if filter_records_by_type(all_records, "A")[0]["content"] == ipv4_address:
-                logging.info("A record is up-to-date")
-            else:
-                logging.info("A record is outdated")
-                records_to_update.append(
-                    new_record(fqdn, "A", ipv4_address, 60))
-        else:
+        if not records_filtered:
             logging.info("No A record found")
             records_to_create.append(new_record(fqdn, "A", ipv4_address, 60))
+            if args.subdomain:
+                logging.info("No Subdomain A record found")
+                records_to_create.append(new_record("*."+fqdn, "A", ipv4_address, 60))
+        else:
+            for record in records_filtered:
+                log_prefix = "Subdomain " if "*" in record["name"] else ""
+                if record["content"] == ipv4_address:
+                    logging.info(f"{log_prefix}A record is up-to-date")
+                else:
+                    record_name = "*." + fqdn if "*" in record["name"] else fqdn
+                    logging.info(f"{log_prefix}A record is outdated")
+                    records_to_update.append(new_record(record_name, "A", ipv4_address, 60))
+
 
     # Good god this is ugly. I hate myself for writing this. This really needs refactoring...
     if args.AAAA:
