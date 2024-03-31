@@ -40,7 +40,7 @@ chmod +x ionos_dyndns.py
 
 ### General
 ```
-usage: ionos_dyndns.py [-h] [-4] [-6] [-i] [-H] --api-prefix  --api-secret
+usage: ionos_dyndns.py [-h] [-4] [-6] [-i] [-H] [-W] --api-prefix  --api-secret
 
 Create and update DNS records for this host using IONOS' API to use as a sort of DynDNS (for example via a cronjob).
 
@@ -50,6 +50,7 @@ optional arguments:
   -6, --AAAA         Create/Update AAAA record
   -i , --interface   Interface name for determining the public IPv6 address (Default: eth0)
   -H , --fqdn        Host's FQDN (Default: hostname -f)
+  -W --wildcard      Create/Update Wildcard A/AAAA record (Default: False)
   --api-prefix       API key publicprefix
   --api-secret       API key secret
 ```

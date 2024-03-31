@@ -62,6 +62,13 @@ def parse_cmdline_args():
         metavar="",
         help="API key secret"
     )
+    argparser.add_argument(
+        "-W", "--wildcard",
+        default=False,
+        action="store_const",
+        const=True,
+        help="Create/Update Wildcard records with current action (A or AAAA) (Dgiefault: False)"
+    )
 
     args = argparser.parse_args()
 
@@ -89,7 +96,7 @@ def main():
 
     domain = get_domain_from_fqdn(fqdn)
     zone = get_zone(domain)
-    all_records = get_all_records_for_fqdn(zone["id"], fqdn)
+    all_records = get_all_records_for_fqdn(zone["id"], fqdn, args.wildcard)
     records_to_create = []
     records_to_update = []
 
@@ -97,16 +104,22 @@ def main():
     if args.A:
         ipv4_address = get_ipv4_address()
         logging.info("Public IPv4: " + ipv4_address)
-        if filter_records_by_type(all_records, "A"):
-            if filter_records_by_type(all_records, "A")[0]["content"] == ipv4_address:
-                logging.info("A record is up-to-date")
-            else:
-                logging.info("A record is outdated")
-                records_to_update.append(
-                    new_record(fqdn, "A", ipv4_address, 60))
-        else:
+        records_filtered = filter_records_by_type(all_records, "A")
+        if not records_filtered:
             logging.info("No A record found")
             records_to_create.append(new_record(fqdn, "A", ipv4_address, 60))
+            if args.wildcard:
+                logging.info("No Wildcard A record found")
+                records_to_create.append(new_record("*." + fqdn, "A", ipv4_address, 60))
+        else:
+            for record in records_filtered:
+                log_prefix = "Wildcard " if "*" in record["name"] else ""
+                if record["content"] == ipv4_address:
+                    logging.info(f"{log_prefix}A record is up-to-date")
+                else:
+                    record_name = "*." + fqdn if "*" in record["name"] else fqdn
+                    logging.info(f"{log_prefix}A record is outdated")
+                    records_to_update.append(new_record(record_name, "A", ipv4_address, 60))
 
     # Good god this is ugly. I hate myself for writing this. This really needs refactoring...
     if args.AAAA:
@@ -146,7 +159,8 @@ def get_ipv4_address():
 
 
 def get_ipv6_address(interface_name):
-    ip_output = subprocess.getoutput(f"ip -6 -o address show dev {interface_name} scope global | grep --invert temporary | grep --invert mngtmpaddr")
+    ip_output = subprocess.getoutput(
+        f"ip -6 -o address show dev {interface_name} scope global | grep --invert temporary | grep --invert mngtmpaddr")
     if ip_output != "":
         ip_output_regex = r"(?:inet6)(?:\s+)(.+)(?:\/\d{1,3})"
         return re.search(ip_output_regex, ip_output, re.IGNORECASE).group(1)
@@ -160,10 +174,11 @@ def get_zone(domain):
     return list(filter(lambda zone: zone['name'] == domain, response))[0]
 
 
-def get_all_records_for_fqdn(zone_id, host):
+def get_all_records_for_fqdn(zone_id, host, wildcard=False):
     url = f"{api_url}/{zone_id}"
     records = json.loads(requests.request("GET", url, headers=api_headers).text)['records']
-    return list(filter(lambda record: record['name'] == host, records))
+    return list(
+        filter(lambda record: record['name'] == host or (wildcard is True and record['name'] == '*.' + host), records))
 
 
 def filter_records_by_type(records, type):
